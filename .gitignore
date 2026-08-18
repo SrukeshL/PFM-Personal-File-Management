@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+pfm-tests/node_modules/
+
+# Personal data — NEVER commit these
+*.pfm
+generated_*.html
+*_case_*.json
+uploads/
+scans/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Logs
+npm-debug.log*
