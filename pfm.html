@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<!--
+  Personal File Management (PFM) — Round 1
+  Copyright (C) 2026  Srukesh Lothukunta
+  Licensed under the GNU General Public License v3.0 (GPL-3.0).
+  Self-contained, offline-first personal document vault.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PFM — Personal File Management</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" onerror="window.__noOCR=true"></script>
+<style>
+  :root{
+    --ink:#14213d; --paper:#fbfaf7; --line:#d9d4c7; --muted:#6b6656;
+    --accent:#2a6f6b; --accent-ink:#e8f2f0; --warn:#b4531f; --danger:#9c2f2f;
+    --shadow:0 1px 0 rgba(20,33,61,.04),0 8px 24px -12px rgba(20,33,61,.18);
+    --mono:"SF Mono",ui-monospace,"Roboto Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype","Book Antiqua",Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:14px}
+  .hidden{display:none!important}
+
+  /* ---------- Lock screen ---------- */
+  #lock{position:fixed;inset:0;background:var(--ink);color:var(--paper);
+    display:flex;align-items:center;justify-content:center;z-index:100}
+  .lockcard{width:min(420px,92vw);text-align:center}
+  .lockcard h1{font-family:var(--serif);font-weight:600;font-size:34px;
+    letter-spacing:-.5px;margin:0 0 4px}
+  .lockcard .tag{font-family:var(--mono);font-size:11px;letter-spacing:.18em;
+    text-transform:uppercase;color:#8fa8a5;margin-bottom:28px}
+  .lockcard input{width:100%;padding:13px 15px;border-radius:10px;border:1px solid #2f4a5f;
+    background:#0e1830;color:var(--paper);margin-bottom:10px;outline:none}
+  .lockcard input:focus{border-color:var(--accent)}
+  .lockcard button{width:100%;padding:13px;border-radius:10px;border:none;
+    background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:15px}
+  .lockcard .hint{color:#8fa8a5;font-size:12.5px;margin-top:16px;line-height:1.6}
+  .lockcard .err{color:#f0a58a;font-size:13px;min-height:18px;margin-bottom:6px}
+
+  /* ---------- App shell ---------- */
+  header{position:sticky;top:0;background:var(--paper);border-bottom:1px solid var(--line);
+    z-index:20;display:flex;align-items:center;gap:16px;padding:12px 20px}
+  header .brand{font-family:var(--serif);font-weight:600;font-size:20px;letter-spacing:-.3px}
+  header .brand small{font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;
+    color:var(--muted);display:block;text-transform:uppercase;margin-top:-2px}
+  header nav{display:flex;gap:2px;margin-left:8px}
+  header nav button{background:none;border:none;padding:8px 13px;border-radius:8px;
+    color:var(--muted);font-weight:500;font-size:14px}
+  header nav button.on{background:var(--ink);color:var(--paper)}
+  header .sp{flex:1}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 14px;
+    font-weight:600;font-size:13.5px;color:var(--ink)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+  main{max-width:1080px;margin:0 auto;padding:26px 20px 80px}
+
+  /* ---------- Dashboard ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;
+    box-shadow:var(--shadow)}
+  .stat .n{font-family:var(--serif);font-size:34px;font-weight:600;line-height:1}
+  .stat .l{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .stat.warn .n{color:var(--warn)} .stat.danger .n{color:var(--danger)}
+  h2{font-family:var(--serif);font-weight:600;font-size:22px;margin:34px 0 14px}
+  .alerts{display:flex;flex-direction:column;gap:8px}
+  .alert{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);
+    border-left:4px solid var(--warn);border-radius:10px;padding:11px 15px}
+  .alert.exp{border-left-color:var(--danger)}
+  .alert .d{margin-left:auto;font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+
+  /* ---------- Table / list ---------- */
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .toolbar input[type=search],.toolbar select{padding:9px 12px;border:1px solid var(--line);
+    border-radius:9px;background:#fff}
+  .toolbar input[type=search]{flex:1;min-width:180px}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);
+    border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+  th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted);padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600}
+  td{padding:12px 15px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr.row{cursor:pointer} tr.row:hover td{background:#f5f3ee}
+  .pill{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;
+    background:var(--accent-ink);color:var(--accent)}
+  .exp-tag{font-family:var(--mono);font-size:12px}
+  .exp-tag.soon{color:var(--warn);font-weight:600}
+  .exp-tag.past{color:var(--danger);font-weight:600}
+  .empty{text-align:center;color:var(--muted);padding:60px 20px}
+  .empty p{margin:6px 0}
+
+  /* ---------- Modal / form ---------- */
+  .modal{position:fixed;inset:0;background:rgba(20,33,61,.4);display:flex;
+    align-items:flex-start;justify-content:center;z-index:50;padding:40px 16px;overflow:auto}
+  .sheet{width:min(560px,100%);background:var(--paper);border-radius:18px;
+    box-shadow:0 24px 60px -20px rgba(0,0,0,.5);overflow:hidden}
+  .sheet header{position:static;border:none;padding:18px 22px 4px}
+  .sheet header .brand{font-size:18px}
+  .sheet .body{padding:6px 22px 22px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--muted);
+    margin-bottom:5px;letter-spacing:.02em}
+  .field input,.field select,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--line);
+    border-radius:9px;background:#fff}
+  .field textarea{resize:vertical;min-height:60px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;
+    color:var(--muted);background:#fff;cursor:pointer;transition:.15s}
+  .drop:hover,.drop.over{border-color:var(--accent);color:var(--accent);background:var(--accent-ink)}
+  .drop.has{border-style:solid;border-color:var(--accent)}
+  .ocrbar{font-size:12.5px;color:var(--accent);margin-top:8px;font-family:var(--mono)}
+  .sheet .actions{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line);
+    background:#fff}
+  .sheet .actions .sp{flex:1}
+  .filemeta{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .viewfile img{max-width:100%;border-radius:10px;border:1px solid var(--line)}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:var(--paper);padding:11px 20px;border-radius:10px;
+    font-size:14px;z-index:200;box-shadow:var(--shadow)}
+  @media(max-width:560px){.two{grid-template-columns:1fr}header nav{display:none}}
+</style>
+</head>
+<body>
+
+<!-- ===== LOCK SCREEN ===== -->
+<div id="lock">
+  <div class="lockcard">
+    <h1>PFM</h1>
+    <div class="tag">Personal File Management</div>
+    <div class="err" id="lockErr"></div>
+    <input type="password" id="pw" placeholder="Vault password" autocomplete="off">
+    <input type="password" id="pw2" class="hidden" placeholder="Confirm password" autocomplete="off">
+    <button id="unlockBtn">Unlock</button>
+    <div class="hint" id="lockHint"></div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="app" class="hidden">
+  <header>
+    <div class="brand">PFM<small>Personal File Management</small></div>
+    <nav>
+      <button data-view="dash" class="on">Dashboard</button>
+      <button data-view="docs">Documents</button>
+    </nav>
+    <div class="sp"></div>
+    <button class="btn primary" id="addBtn">+ Add document</button>
+    <button class="btn" id="exportBtn">Export</button>
+    <button class="btn" id="importBtn">Import</button>
+    <button class="btn ghost" id="lockAppBtn">Lock</button>
+  </header>
+  <main>
+    <section id="view-dash"></section>
+    <section id="view-docs" class="hidden"></section>
+  </main>
+</div>
+
+<input type="file" id="importFile" accept=".pfm,application/json" class="hidden">
+
+<script>
+"use strict";
+/* ============================================================
+   PFM — Round 1.  All logic below. No network calls except the
+   Tesseract CDN script tag (used only for optional OCR auto-fill;
+   the app runs fully offline once loaded).
+   ============================================================ */
+
+const CATEGORIES = ["ID","Financial","Medical","Insurance","Legal","Immigration","Property","Tax","Other"];
+
+/* ---------- Crypto (AES-GCM-256 / PBKDF2) ---------- */
+const enc = new TextEncoder(), dec = new TextDecoder();
+async function deriveKey(pw, salt){
+  const base = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    {name:"PBKDF2", salt, iterations:250000, hash:"SHA-256"},
+    base, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+}
+async function encryptJSON(obj, pw){
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(pw, salt);
+  const ct = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, enc.encode(JSON.stringify(obj)));
+  return {v:1, alg:"AES-GCM-256", kdf:"PBKDF2-SHA256-250k",
+    salt:b64(salt), iv:b64(iv), data:b64(new Uint8Array(ct))};
+}
+async function decryptJSON(pkg, pw){
+  const salt = ub64(pkg.salt), iv = ub64(pkg.iv), ct = ub64(pkg.data);
+  const key = await deriveKey(pw, salt);
+  const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv}, key, ct);
+  return JSON.parse(dec.decode(pt));
+}
+function b64(u8){let s="";for(const b of u8)s+=String.fromCharCode(b);return btoa(s);}
+function ub64(s){const bin=atob(s);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;}
+
+/* ---------- IndexedDB (encrypted vault blob + file blobs) ---------- */
+const DB="pfm-db", STORE="vault", FILES="files";
+function idb(){return new Promise((res,rej)=>{
+  const r=indexedDB.open(DB,1);
+  r.onupgradeneeded=e=>{const db=e.target.result;
+    if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE);
+    if(!db.objectStoreNames.contains(FILES))db.createObjectStore(FILES);};
+  r.onsuccess=e=>res(e.target.result); r.onerror=e=>rej(e.target.error);
+});}
+async function idbPut(store,key,val){const db=await idb();return new Promise((res,rej)=>{
+  const tx=db.transaction(store,"readwrite");tx.objectStore(store).put(val,key);
+  tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+async function idbGet(store,key){const db=await idb();return new Promise((res,rej)=>{
+  const tx=db.transaction(store,"readonly");const rq=tx.objectStore(store).get(key);
+  rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+async function idbDel(store,key){const db=await idb();return new Promise((res,rej)=>{
+  const tx=db.transaction(store,"readwrite");tx.objectStore(store).delete(key);
+  tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+
+/* ---------- App state ---------- */
+let PW=null;                       // vault password held in memory only
+let STATE={docs:[]};               // {id,type,category,issuer,number,issued,expires,tags,notes,fileId,fileMeta,created}
+const $=s=>document.querySelector(s);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+/* ---------- Persistence ---------- */
+async function saveVault(){
+  const pkg=await encryptJSON(STATE, PW);
+  await idbPut(STORE,"main",pkg);
+}
+async function vaultExists(){ return !!(await idbGet(STORE,"main")); }
+
+/* ---------- Lock screen flow ---------- */
+async function initLock(){
+  const exists = await vaultExists();
+  $("#lockHint").innerHTML = exists
+    ? "Enter your vault password to unlock.<br>Data is stored encrypted on this device only."
+    : "Set a vault password to create your encrypted store.<br>There is no recovery — keep it safe.";
+  if(!exists) $("#pw2").classList.remove("hidden");
+  $("#unlockBtn").textContent = exists ? "Unlock" : "Create vault";
+}
+async function attemptUnlock(){
+  const pw=$("#pw").value, pw2=$("#pw2").value, exists=await vaultExists();
+  $("#lockErr").textContent="";
+  if(!pw){ $("#lockErr").textContent="Password required."; return; }
+  if(!exists){
+    if(pw.length<6){ $("#lockErr").textContent="Use at least 6 characters."; return; }
+    if(pw!==pw2){ $("#lockErr").textContent="Passwords don't match."; return; }
+    PW=pw; STATE={docs:[]}; await saveVault(); enterApp(); return;
+  }
+  try{
+    const pkg=await idbGet(STORE,"main");
+    STATE=await decryptJSON(pkg,pw); PW=pw; enterApp();
+  }catch(e){ $("#lockErr").textContent="Wrong password."; }
+}
+function enterApp(){
+  $("#lock").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+  $("#pw").value=""; $("#pw2").value="";
+  renderDash(); renderDocs(); switchView("dash");
+}
+function lockApp(){
+  PW=null; STATE={docs:[]};
+  $("#app").classList.add("hidden");
+  $("#lock").classList.remove("hidden");
+  $("#lockErr").textContent="";
+}
+
+/* ---------- Views ---------- */
+function switchView(v){
+  document.querySelectorAll("header nav button").forEach(b=>b.classList.toggle("on",b.dataset.view===v));
+  $("#view-dash").classList.toggle("hidden",v!=="dash");
+  $("#view-docs").classList.toggle("hidden",v!=="docs");
+}
+function daysUntil(d){ if(!d)return null; return Math.ceil((new Date(d)-new Date())/86400000); }
+
+function renderDash(){
+  const d=STATE.docs;
+  const soon=d.filter(x=>{const n=daysUntil(x.expires);return n!==null&&n>=0&&n<=60;});
+  const past=d.filter(x=>{const n=daysUntil(x.expires);return n!==null&&n<0;});
+  const byCat=CATEGORIES.map(c=>[c,d.filter(x=>x.category===c).length]).filter(x=>x[1]);
+  let h=`<div class="grid">
+    <div class="stat"><div class="n">${d.length}</div><div class="l">Documents stored</div></div>
+    <div class="stat warn"><div class="n">${soon.length}</div><div class="l">Expiring ≤ 60 days</div></div>
+    <div class="stat danger"><div class="n">${past.length}</div><div class="l">Already expired</div></div>
+    <div class="stat"><div class="n">${d.filter(x=>x.fileId).length}</div><div class="l">With attached file</div></div>
+  </div>`;
+  if(soon.length||past.length){
+    h+=`<h2>Renewal alerts</h2><div class="alerts">`;
+    [...past.sort((a,b)=>daysUntil(a.expires)-daysUntil(b.expires)),
+      ...soon.sort((a,b)=>daysUntil(a.expires)-daysUntil(b.expires))].forEach(x=>{
+      const n=daysUntil(x.expires), exp=n<0;
+      h+=`<div class="alert ${exp?'exp':''}">
+        <span class="pill">${esc(x.category)}</span>
+        <span><strong>${esc(x.type||'Untitled')}</strong>${x.issuer?' · '+esc(x.issuer):''}</span>
+        <span class="d">${exp?`expired ${-n}d ago`:`in ${n}d`} · ${esc(x.expires)}</span></div>`;
+    });
+    h+=`</div>`;
+  }
+  if(byCat.length){
+    h+=`<h2>By category</h2><div class="grid">`;
+    byCat.forEach(([c,n])=>h+=`<div class="stat"><div class="n">${n}</div><div class="l">${c}</div></div>`);
+    h+=`</div>`;
+  }
+  if(!d.length) h=`<div class="empty"><h2 style="margin-top:0">No documents yet</h2>
+    <p>Add your first document to start tracking IDs, insurance, medical and financial records.</p>
+    <p><button class="btn primary" onclick="openForm()">+ Add document</button></p></div>`;
+  $("#view-dash").innerHTML=h;
+}
+
+let FILTER={q:"",cat:""};
+function renderDocs(){
+  const rows=STATE.docs.filter(x=>{
+    if(FILTER.cat&&x.category!==FILTER.cat)return false;
+    if(FILTER.q){const s=(x.type+" "+x.issuer+" "+x.number+" "+(x.tags||[]).join(" ")+" "+x.notes).toLowerCase();
+      if(!s.includes(FILTER.q.toLowerCase()))return false;}
+    return true;
+  }).sort((a,b)=>(a.expires||"9999").localeCompare(b.expires||"9999"));
+  let h=`<div class="toolbar">
+    <input type="search" id="q" placeholder="Search type, issuer, number, tags…" value="${esc(FILTER.q)}">
+    <select id="catFilter"><option value="">All categories</option>
+      ${CATEGORIES.map(c=>`<option${c===FILTER.cat?' selected':''}>${c}</option>`).join("")}</select>
+  </div>`;
+  if(!rows.length){
+    h+=`<div class="empty"><p>No documents match.</p></div>`;
+  }else{
+    h+=`<table><thead><tr><th>Type</th><th>Category</th><th>Issuer</th><th>Number</th><th>Expires</th><th>File</th></tr></thead><tbody>`;
+    rows.forEach(x=>{
+      const n=daysUntil(x.expires);
+      let ec="";if(n!==null){ec=n<0?"past":(n<=60?"soon":"");}
+      h+=`<tr class="row" data-id="${x.id}">
+        <td><strong>${esc(x.type||'—')}</strong></td>
+        <td><span class="pill">${esc(x.category)}</span></td>
+        <td>${esc(x.issuer||'—')}</td>
+        <td>${esc(x.number||'—')}</td>
+        <td class="exp-tag ${ec}">${x.expires||'—'}</td>
+        <td>${x.fileId?'📎':'—'}</td></tr>`;
+    });
+    h+=`</tbody></table>`;
+  }
+  $("#view-docs").innerHTML=h;
+  const q=$("#q");if(q){q.oninput=e=>{FILTER.q=e.target.value;renderDocs();q2focus();};}
+  const cf=$("#catFilter");if(cf)cf.onchange=e=>{FILTER.cat=e.target.value;renderDocs();};
+  document.querySelectorAll("tr.row").forEach(r=>r.onclick=()=>openForm(r.dataset.id));
+}
+let _qsel=null;
+function q2focus(){const q=$("#q");if(q){q.focus();q.selectionStart=q.selectionEnd=q.value.length;}}
+
+/* ---------- Add / edit form ---------- */
+let PENDING_FILE=null; // {blob, meta:{name,type,size}}
+function openForm(id){
+  const d=id?STATE.docs.find(x=>x.id===id):null;
+  PENDING_FILE=null;
+  const m=document.createElement("div");m.className="modal";m.id="modal";
+  m.innerHTML=`<div class="sheet">
+    <header><div class="brand">${d?'Edit document':'Add document'}</div></header>
+    <div class="body">
+      <div class="drop" id="drop">
+        <div id="dropText">${d&&d.fileId?'📎 '+esc(d.fileMeta?.name||'file attached')+' — drop a new file to replace':'Drop a scan/PDF/image here, or click to choose.<br>OCR will try to auto-fill the fields below.'}</div>
+        <input type="file" id="fileInput" class="hidden" accept="image/*,.pdf">
+        <div class="ocrbar hidden" id="ocrbar"></div>
+      </div>
+      <div class="filemeta" id="fileMeta"></div>
+      <div class="field"><label>Document type</label>
+        <input id="f_type" placeholder="e.g. Passport, Driver's license, Health insurance card" value="${d?esc(d.type):''}"></div>
+      <div class="two">
+        <div class="field"><label>Category</label>
+          <select id="f_cat">${CATEGORIES.map(c=>`<option${d&&d.category===c?' selected':''}>${c}</option>`).join("")}</select></div>
+        <div class="field"><label>Issuer</label>
+          <input id="f_issuer" placeholder="e.g. USCIS, State of VA" value="${d?esc(d.issuer):''}"></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Document number</label>
+          <input id="f_number" placeholder="ID / policy / account #" value="${d?esc(d.number):''}"></div>
+        <div class="field"><label>Tags (comma-sep)</label>
+          <input id="f_tags" placeholder="e.g. son, renewal" value="${d?esc((d.tags||[]).join(', ')):''}"></div>
+      </div>
+      <div class="two">
+        <div class="field"><label>Issued date</label>
+          <input id="f_issued" type="date" value="${d?esc(d.issued||''):''}"></div>
+        <div class="field"><label>Expiry date</label>
+          <input id="f_expires" type="date" value="${d?esc(d.expires||''):''}"></div>
+      </div>
+      <div class="field"><label>Notes</label>
+        <textarea id="f_notes" placeholder="Anything worth remembering…">${d?esc(d.notes||''):''}</textarea></div>
+      <div class="viewfile" id="viewfile"></div>
+    </div>
+    <div class="actions">
+      ${d?'<button class="btn ghost" id="delBtn" style="color:var(--danger)">Delete</button>':''}
+      <div class="sp"></div>
+      <button class="btn" id="cancelBtn">Cancel</button>
+      <button class="btn primary" id="saveBtn">${d?'Save changes':'Add document'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  m.onclick=e=>{if(e.target===m)closeForm();};
+  $("#cancelBtn").onclick=closeForm;
+  $("#saveBtn").onclick=()=>saveForm(id);
+  if(d){$("#delBtn").onclick=()=>deleteDoc(id);}
+  wireDrop();
+  if(d&&d.fileId) showAttachedPreview(d.fileId,d.fileMeta);
+}
+function closeForm(){const m=$("#modal");if(m)m.remove();PENDING_FILE=null;}
+
+function wireDrop(){
+  const drop=$("#drop"),input=$("#fileInput");
+  drop.onclick=()=>input.click();
+  input.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);};
+  ["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+  drop.addEventListener("drop",e=>{if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+}
+async function handleFile(file){
+  PENDING_FILE={blob:file,meta:{name:file.name,type:file.type,size:file.size}};
+  $("#drop").classList.add("has");
+  $("#dropText").innerHTML=`📎 <strong>${esc(file.name)}</strong> ready to attach`;
+  $("#fileMeta").textContent=`${(file.size/1024).toFixed(0)} KB · ${file.type||'unknown type'}`;
+  // preview
+  if(file.type.startsWith("image/")){
+    const url=URL.createObjectURL(file);
+    $("#viewfile").innerHTML=`<img src="${url}" alt="preview">`;
+  }else $("#viewfile").innerHTML="";
+  // OCR auto-fill (images only, offline via Tesseract)
+  if(file.type.startsWith("image/")) runOCR(file);
+  else if(file.type==="application/pdf")
+    $("#ocrbar").className="ocrbar", $("#ocrbar").textContent="PDF attached — OCR auto-fill supports images only.";
+}
+async function runOCR(file){
+  const bar=$("#ocrbar");bar.classList.remove("hidden");
+  if(window.__noOCR||typeof Tesseract==="undefined"){
+    bar.textContent="OCR engine unavailable offline — fill fields manually.";return;}
+  bar.textContent="Reading document… 0%";
+  try{
+    const {data}=await Tesseract.recognize(file,"eng",{logger:m=>{
+      if(m.status==="recognizing text")bar.textContent=`Reading document… ${Math.round(m.progress*100)}%`;}});
+    const guess=parseOCR(data.text);
+    let filled=[];
+    if(guess.type&&!$("#f_type").value){$("#f_type").value=guess.type;filled.push("type");}
+    if(guess.number&&!$("#f_number").value){$("#f_number").value=guess.number;filled.push("number");}
+    if(guess.expires&&!$("#f_expires").value){$("#f_expires").value=guess.expires;filled.push("expiry");}
+    if(guess.issued&&!$("#f_issued").value){$("#f_issued").value=guess.issued;filled.push("issued");}
+    if(guess.category)$("#f_cat").value=guess.category;
+    bar.textContent=filled.length?`Auto-filled: ${filled.join(", ")}. Please verify.`:"Read complete — no fields confidently detected.";
+  }catch(e){bar.textContent="OCR failed — fill fields manually.";}
+}
+/* Rough best-effort field extraction from OCR text */
+function parseOCR(text){
+  const t=text.replace(/\r/g,""),up=t.toUpperCase();const g={};
+  const typeMap=[["PASSPORT","Passport","Immigration"],["DRIVER","Driver's License","ID"],
+    ["DRIVING LICENCE","Driving Licence","ID"],["INSURANCE","Insurance Card","Insurance"],
+    ["MEDICARE","Medicare Card","Medical"],["MEDICAID","Medicaid Card","Medical"],
+    ["SOCIAL SECURITY","Social Security Card","ID"],["EMPLOYMENT AUTHORIZATION","EAD Card","Immigration"],
+    ["PERMANENT RESIDENT","Green Card","Immigration"],["BIRTH CERTIFICATE","Birth Certificate","ID"],
+    ["POLICY","Insurance Policy","Insurance"],["TAX","Tax Document","Tax"]];
+  for(const [kw,label,cat] of typeMap){ if(up.includes(kw)){g.type=label;g.category=cat;break;} }
+  // dates
+  const dates=[...t.matchAll(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})|(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/g)]
+    .map(m=>normDate(m[0])).filter(Boolean);
+  // expiry keyword proximity
+  const expLine=t.split("\n").find(l=>/EXP|VALID|UNTIL/i.test(l));
+  if(expLine){const dm=expLine.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})|(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/);
+    if(dm)g.expires=normDate(dm[0]);}
+  if(!g.expires&&dates.length)g.expires=dates.sort().reverse()[0];
+  if(dates.length>1)g.issued=dates.sort()[0];
+  // number: longest alnum token 6-20 chars with a digit, excluding date-shaped
+  // tokens and pure numeric runs already captured as dates.
+  const isDateLike=x=>/^\d{1,4}[-\/.]\d{1,2}[-\/.]\d{2,4}$/.test(x)||dates.includes(normDate(x));
+  const tok=(t.match(/[A-Z0-9][A-Z0-9\-]{5,19}/g)||[])
+    .filter(x=>/\d/.test(x)&&/[A-Z]/.test(x)&&!isDateLike(x))   // prefer alnum IDs over pure numbers
+    .sort((a,b)=>b.length-a.length)[0]
+    || (t.match(/[A-Z0-9][A-Z0-9\-]{5,19}/g)||[])
+      .filter(x=>/\d/.test(x)&&!isDateLike(x))
+      .sort((a,b)=>b.length-a.length)[0];
+  if(tok)g.number=tok;
+  return g;
+}
+function normDate(s){
+  s=s.trim();let m;
+  if((m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/)))
+    return `${m[1]}-${p2(m[2])}-${p2(m[3])}`;
+  if((m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/))){
+    let y=m[3];if(y.length===2)y="20"+y;
+    return `${y}-${p2(m[1])}-${p2(m[2])}`; // assumes MM-DD-YYYY
+  }
+  return null;
+}
+function p2(n){n=String(parseInt(n,10));return n.length<2?"0"+n:n;}
+
+async function showAttachedPreview(fileId,meta){
+  const blob=await idbGet(FILES,fileId);
+  if(!blob)return;
+  $("#fileMeta").textContent=`${meta?.name||'file'} · ${(blob.size/1024).toFixed(0)} KB`;
+  if((meta?.type||blob.type||"").startsWith("image/")){
+    const url=URL.createObjectURL(blob);
+    $("#viewfile").innerHTML=`<img src="${url}" alt="attached">`;
+  }else{
+    const url=URL.createObjectURL(blob);
+    $("#viewfile").innerHTML=`<a class="btn" href="${url}" download="${esc(meta?.name||'file')}">Download attached file</a>`;
+  }
+}
+
+async function saveForm(id){
+  const doc={
+    id:id||uid(),
+    type:$("#f_type").value.trim(),
+    category:$("#f_cat").value,
+    issuer:$("#f_issuer").value.trim(),
+    number:$("#f_number").value.trim(),
+    tags:$("#f_tags").value.split(",").map(s=>s.trim()).filter(Boolean),
+    issued:$("#f_issued").value||null,
+    expires:$("#f_expires").value||null,
+    notes:$("#f_notes").value.trim(),
+    created:id?(STATE.docs.find(x=>x.id===id).created):Date.now()
+  };
+  const existing=id?STATE.docs.find(x=>x.id===id):null;
+  doc.fileId=existing?existing.fileId:null;
+  doc.fileMeta=existing?existing.fileMeta:null;
+  if(PENDING_FILE){
+    const fid=doc.fileId||uid();
+    await idbPut(FILES,fid,PENDING_FILE.blob);
+    doc.fileId=fid; doc.fileMeta=PENDING_FILE.meta;
+  }
+  if(!doc.type&&!doc.number&&!doc.fileId){toast("Add at least a type, number, or file.");return;}
+  if(id){const i=STATE.docs.findIndex(x=>x.id===id);STATE.docs[i]=doc;}
+  else STATE.docs.push(doc);
+  await saveVault();
+  closeForm();renderDash();renderDocs();
+  toast(id?"Document updated.":"Document added.");
+}
+async function deleteDoc(id){
+  if(!confirm("Delete this document and its attached file? This cannot be undone."))return;
+  const d=STATE.docs.find(x=>x.id===id);
+  if(d&&d.fileId)await idbDel(FILES,d.fileId);
+  STATE.docs=STATE.docs.filter(x=>x.id!==id);
+  await saveVault();closeForm();renderDash();renderDocs();toast("Deleted.");
+}
+
+/* ---------- Encrypted export / import (files included, base64) ---------- */
+async function exportVault(){
+  const pw=prompt("Password to encrypt this export (blank = use vault password):");
+  if(pw===null)return;
+  const key=pw||PW;
+  const files={};
+  for(const d of STATE.docs){
+    if(d.fileId){const blob=await idbGet(FILES,d.fileId);
+      if(blob){files[d.fileId]=b64(new Uint8Array(await blob.arrayBuffer()));}}
+  }
+  const bundle={app:"PFM",v:1,exported:new Date().toISOString(),docs:STATE.docs,files};
+  const pkg=await encryptJSON(bundle,key);
+  const blob=new Blob([JSON.stringify(pkg,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`pfm-export-${new Date().toISOString().slice(0,10)}.pfm`;
+  a.click();
+  toast("Encrypted export downloaded.");
+}
+function importVault(){$("#importFile").click();}
+async function handleImport(file){
+  const pw=prompt("Password for this export file:");
+  if(pw===null)return;
+  try{
+    const pkg=JSON.parse(await file.text());
+    const bundle=await decryptJSON(pkg,pw);
+    if(bundle.app!=="PFM")throw 0;
+    if(!confirm(`Import ${bundle.docs.length} document(s)? This merges into your current vault.`))return;
+    for(const [fid,data] of Object.entries(bundle.files||{})){
+      const u8=ub64(data);await idbPut(FILES,fid,new Blob([u8]));
+    }
+    const ids=new Set(STATE.docs.map(x=>x.id));
+    bundle.docs.forEach(d=>{if(ids.has(d.id))d.id=uid();STATE.docs.push(d);});
+    await saveVault();renderDash();renderDocs();toast(`Imported ${bundle.docs.length} document(s).`);
+  }catch(e){toast("Import failed — wrong password or invalid file.");}
+}
+
+/* ---------- Utils ---------- */
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),2600);}
+window.openForm=openForm;
+
+/* ---------- Wire up ---------- */
+$("#unlockBtn").onclick=attemptUnlock;
+$("#pw").addEventListener("keydown",e=>{if(e.key==="Enter")attemptUnlock();});
+$("#pw2").addEventListener("keydown",e=>{if(e.key==="Enter")attemptUnlock();});
+$("#addBtn").onclick=()=>openForm();
+$("#exportBtn").onclick=exportVault;
+$("#importBtn").onclick=importVault;
+$("#importFile").onchange=e=>{if(e.target.files[0]){handleImport(e.target.files[0]);e.target.value="";}};
+$("#lockAppBtn").onclick=lockApp;
+document.querySelectorAll("header nav button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
+initLock();
+</script>
+</body>
+</html>
